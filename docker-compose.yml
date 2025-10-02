@@ -1,0 +1,92 @@
+
+services:
+  qdrant:
+    # 👉 Pin to a specific version you’ve validated in staging.
+    # Replace with the exact version you want (e.g., "v1.8.4"). Avoid :latest in prod.
+    image: qdrant/qdrant:v1.15.5
+    container_name: qdrant
+    restart: unless-stopped
+
+    # Run unprivileged inside the container (adjust UID:GID to match your host user if needed)
+#    user: "1000:1000" TODO
+
+    # Persist data & (optionally) mount a custom config and snapshots directory
+    volumes:
+      - qdrant_data:/qdrant/storage
+      # Uncomment if you want to use your own config.yml
+      # - ./config/qdrant.yaml:/qdrant/config/production.yaml:ro
+      - qdrant_snapshots:/qdrant/snapshots
+
+    # Open HTTP (6333) and gRPC (6334)
+    ports:
+      - "6333:6333"   # HTTP API / REST
+      - "6334:6334"   # gRPC API
+
+    environment:
+      # Service ports (don’t change unless you also change the port mapping above)
+      QDRANT__SERVICE__HTTP_PORT: "6333"
+      QDRANT__SERVICE__GRPC_PORT: "6334"
+
+      # Tuning (pick values that match your box/workload)
+      # Number of worker threads; leave empty to let Qdrant auto-detect.
+      # QDRANT__STORAGE__PERFORMANCE_MAX_SEARCH_THREADS: "0"
+      # Temp dir (keep inside container; data is under /qdrant/storage)
+      QDRANT__STORAGE__TEMP_PATH: "/qdrant/tmp"
+
+      # Snapshots location
+      QDRANT__STORAGE__SNAPSHOTS_PATH: "/qdrant/snapshots"
+
+      # Optional: enable metrics at /metrics
+      QDRANT__TELEMETRY__PROMETHEUS__ENDPOINT: "/metrics"
+
+      # Optional: set a cluster node ID if you’ll later form a cluster
+      # QDRANT__CLUSTER__ENABLED: "true"
+      # QDRANT__CLUSTER__PEER_ID: "qdrant-1"
+
+      # Optional (behind a trusted reverse proxy with TLS + auth):
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?}
+
+    # Healthcheck tries the readiness endpoint; falls back to root if needed
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:6333/readyz || curl -fsS http://localhost:6333/"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+    # Reasonable defaults; tune to your host
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 8g
+        reservations:
+          cpus: "1.0"
+          memory: 2g
+
+    # Extra hardening (safe defaults)
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    # Container logging (rotate on host docker engine)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    # If you use an internal network with a proxy / app
+    networks:
+      - qdrant_net
+
+volumes:
+  qdrant_data:
+    driver: local
+  qdrant_snapshots:
+    driver: local
+
+networks:
+  qdrant_net:
+    driver: bridge

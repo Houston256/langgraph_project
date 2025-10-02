@@ -1,0 +1,20 @@
+[project]
+name = "assistant"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.118.0",
+    "langchain[openai]>=0.3.27",
+    "langfuse>=3.6.1",
+    "langgraph>=0.6.8",
+    "pydantic-settings>=2.11.0",
+    "python-dotenv>=1.1.1",
+]
+
+[dependency-groups]
+dev = [
+    "fastapi[standard]>=0.118.0",
+    "pyright>=1.1.406",
+]
