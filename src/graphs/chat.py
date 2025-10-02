@@ -22,18 +22,17 @@ async def stream_graph_updates(user_input: str, graph: compiled_state, thread_id
         callbacks=[langfuse_handler],
     )
 
-    async for chunk in graph.astream(
+    async for chunk, namespace in graph.astream(
             MessagesState(messages=chat_input),
-            stream_mode="updates",
+            stream_mode="messages",
             config=config):
-        for node_name, node_state in chunk.items():
-            yield node_state["messages"][-1].content
+        yield chunk.content
 
 
-def chatbot(state: MessagesState):
-    llm = init_chat_model(settings.model_name)
-    return {"messages": [llm.invoke(state["messages"])]}
-
+async def chatbot(state: MessagesState, config: RunnableConfig):
+    llm = init_chat_model(settings.model_name, streaming=True)
+    ai_msg = await llm.ainvoke(state["messages"], config=config)
+    return {"messages": [ai_msg]}
 
 def create_graph() -> compiled_state:
     checkpointer = InMemorySaver()
