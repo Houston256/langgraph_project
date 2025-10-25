@@ -6,15 +6,28 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.118.0",
+    "langchain-core>=1.0.0",
     "langchain[openai]>=0.3.27",
     "langfuse>=3.6.1",
     "langgraph>=0.6.8",
     "pydantic-settings>=2.11.0",
     "python-dotenv>=1.1.1",
+    "qdrant-client>=1.15.1",
 ]
 
 [dependency-groups]
 dev = [
+    "bs4>=0.0.2",
     "fastapi[standard]>=0.118.0",
+    "html5lib>=1.1",
+    "langchain-ollama>=0.3.10",
+    "langchain-tests>=1.0.0",
+    "lxml>=6.0.2",
+    "marimo>=0.17.0",
+    "markdownify>=1.2.0",
+    "matplotlib>=3.10.7",
+    "pandas>=2.3.3",
     "pyright>=1.1.406",
+    "ruff>=0.14.1",
+    "tabulate>=0.9.0",
 ]

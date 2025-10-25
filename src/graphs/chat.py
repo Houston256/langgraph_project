@@ -1,13 +1,17 @@
 from typing import AsyncGenerator
 
+from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AnyMessage
 from langchain_core.runnables import RunnableConfig
+from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, START, END, MessagesState
-from langfuse.langchain import CallbackHandler
 from langgraph.graph.state import CompiledStateGraph
+
 from api.config import settings
+from graphs.prompts import SYSTEM_PROMPT
+from search.qdrant import query_product
 
 compiled_state = CompiledStateGraph[MessagesState, None, MessagesState, MessagesState]
 
@@ -34,6 +38,7 @@ async def chatbot(state: MessagesState, config: RunnableConfig):
     ai_msg = await llm.ainvoke(state["messages"], config=config)
     return {"messages": [ai_msg]}
 
+
 def create_graph() -> compiled_state:
     checkpointer = InMemorySaver()
     graph_builder = StateGraph(MessagesState)
@@ -43,3 +48,23 @@ def create_graph() -> compiled_state:
     graph_builder.add_edge("chatbot", END)
     graph = graph_builder.compile(checkpointer=checkpointer)
     return graph
+
+
+def create_db_agent():
+    checkpointer = InMemorySaver()
+    model = init_chat_model(
+        settings.model_name,
+        streaming=True,
+        temperature=0.5,
+        max_tokens=1000,
+        timeout=30
+    )
+
+    agent = create_agent(
+        model,
+        tools=[query_product],
+        checkpointer=checkpointer,
+        system_prompt=SYSTEM_PROMPT
+
+    )
+    return agent
