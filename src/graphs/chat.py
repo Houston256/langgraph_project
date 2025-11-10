@@ -1,6 +1,5 @@
 from typing import AsyncGenerator
 
-from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AnyMessage
 from langchain_core.runnables import RunnableConfig
@@ -10,23 +9,23 @@ from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.graph.state import CompiledStateGraph
 
 from api.config import settings
-from graphs.prompts import SYSTEM_PROMPT
-from search.qdrant import query_product
 
 compiled_state = CompiledStateGraph[MessagesState, None, MessagesState, MessagesState]
 
+langfuse_handler = CallbackHandler()
+
 
 async def stream_graph_updates(user_input: str, graph: compiled_state, thread_id: str) -> AsyncGenerator[str, None]:
-    langfuse_handler = CallbackHandler()
-
     chat_input: list[AnyMessage] = [HumanMessage(content=user_input)]
-
     config = RunnableConfig(
         configurable={"thread_id": thread_id},
         callbacks=[langfuse_handler],
+        metadata={
+            "langfuse_session_id": thread_id,
+        },
     )
 
-    async for chunk, namespace in graph.astream(
+    async for chunk, metadata in graph.astream(
             MessagesState(messages=chat_input),
             stream_mode="messages",
             config=config):
@@ -48,23 +47,3 @@ def create_graph() -> compiled_state:
     graph_builder.add_edge("chatbot", END)
     graph = graph_builder.compile(checkpointer=checkpointer)
     return graph
-
-
-def create_db_agent():
-    checkpointer = InMemorySaver()
-    model = init_chat_model(
-        settings.model_name,
-        streaming=True,
-        temperature=0.5,
-        max_tokens=1000,
-        timeout=30
-    )
-
-    agent = create_agent(
-        model,
-        tools=[query_product],
-        checkpointer=checkpointer,
-        system_prompt=SYSTEM_PROMPT
-
-    )
-    return agent
