@@ -2,7 +2,7 @@ from typing import Optional, Literal
 
 from langchain.tools import tool
 from langchain_ollama import OllamaEmbeddings
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, constr
 from qdrant_client import models, AsyncQdrantClient
 from qdrant_client.http.models import MatchAny
 
@@ -22,12 +22,14 @@ embeddings = OllamaEmbeddings(model="qwen3-embedding:4b")
 cat_t = Literal['BOTY', 'OBLEČENÍ', 'BRÝLE', 'DOPLŇKY', 'VÝSTROJ', 'OSTATNÍ']
 gender_t = Literal['Dětské', 'Dámské', 'Pánské', "Uni"]
 
+NonEmptyStr = constr(min_length=1)
+
 
 class ProductFilterInput(BaseModel):
-    name: str = Field(description="Product name, plain text which will be embedded")
-    description: str = Field(description="Product description, plain text which will be embedded")
-    groups: set[cat_t] = Field(default_factory=set, description="Set of groups. Don't filter if empty")
-    genders: set[gender_t] = Field(default_factory=set, description="Set of genders. Don't filter if empty")
+    name: NonEmptyStr = Field(description="Product name, plain text which will be embedded")
+    description: NonEmptyStr = Field(description="Product description, plain text which will be embedded")
+    groups: list[cat_t] = Field(default_factory=list, description="List of groups. Don't filter if empty")
+    genders: list[gender_t] = Field(default_factory=list, description="List of genders. Don't filter if empty")
     min_price: Optional[float] = Field(None, description="Minimum price")
     max_price: Optional[float] = Field(None, description="Maximum price")
 
@@ -51,8 +53,8 @@ async def product_by_uuid(uuid: str) -> dict:
 @tool(args_schema=ProductFilterInput, description="Query a vector database of products.")
 async def query_product(name: str,
                         description: str,
-                        groups: set[cat_t] = set(),
-                        genders: set[gender_t] = set(),
+                        groups: list[cat_t],
+                        genders: list[gender_t],
                         min_price: Optional[float] = None,
                         max_price: Optional[float] = None,
                         ) -> list[dict]:
@@ -60,12 +62,15 @@ async def query_product(name: str,
     Query a vector database of products.
     :param name: expected name of product
     :param description: expected description of product
-    :param groups: set of groups to filter by, dont filter if empty
-    :param genders: set of genders to filter by, dont filter if empty
+    :param groups: list of groups to filter by, dont filter if empty
+    :param genders: list of genders to filter by, dont filter if empty
     :param min_price: minimal price of product
     :param max_price: maximal price of product
     :return: list of products which satisfy the query
     """
+
+    groups_unique = list(set(groups))
+    genders_unique = list(set(genders))
 
     name_emb = await embeddings.aembed_query(name)
     desc_emb = await embeddings.aembed_query(description)
@@ -83,14 +88,14 @@ async def query_product(name: str,
         filters.append(
             models.FieldCondition(
                 key="group",
-                match=MatchAny(any=list(groups))
+                match=MatchAny(any=groups_unique)
             ))
 
     if genders:
         filters.append(
             models.FieldCondition(
                 key="gender",
-                match=MatchAny(any=list(genders))
+                match=MatchAny(any=genders_unique)
             ))
 
     global_filter = models.Filter(must=filters)
@@ -115,8 +120,15 @@ async def query_product(name: str,
         query=models.FusionQuery(fusion=models.Fusion.DBSF),
         query_filter=global_filter,
         limit=10,
-        with_payload=["slug", "name", "description_plain", "group", "subgroup", "gender",
-                      "colors[].color", "colors[].url", "colors[].price", ]
+        with_payload=[
+            "slug",
+            "name",
+            "description_plain",
+            "group", "subgroup", "gender",
+            "colors[].color",
+            "colors[].url",
+            "colors[].price",
+        ]
     )
 
     res = [x.payload for x in res.points]
