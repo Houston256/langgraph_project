@@ -14,22 +14,30 @@ client = AsyncQdrantClient(
     api_key=settings.qdrant_api_key.get_secret_value(),
     grpc_port=settings.qdrant_grpc_port,
     https=False,
-    prefer_grpc=True
+    prefer_grpc=True,
 )
 
 embeddings = OllamaEmbeddings(model="qwen3-embedding:4b")
 
-cat_t = Literal['BOTY', 'OBLEČENÍ', 'BRÝLE', 'DOPLŇKY', 'VÝSTROJ', 'OSTATNÍ']
-gender_t = Literal['Dětské', 'Dámské', 'Pánské', "Uni"]
+cat_t = Literal["BOTY", "OBLEČENÍ", "BRÝLE", "DOPLŇKY", "VÝSTROJ", "OSTATNÍ"]
+gender_t = Literal["Dětské", "Dámské", "Pánské", "Uni"]
 
 NonEmptyStr = constr(min_length=1)
 
 
 class ProductFilterInput(BaseModel):
-    name: NonEmptyStr = Field(description="Product name, plain text which will be embedded")
-    description: NonEmptyStr = Field(description="Product description, plain text which will be embedded")
-    groups: list[cat_t] = Field(default_factory=list, description="List of groups. Don't filter if empty")
-    genders: list[gender_t] = Field(default_factory=list, description="List of genders. Don't filter if empty")
+    name: NonEmptyStr = Field(
+        description="Product name, plain text which will be embedded"
+    )
+    description: NonEmptyStr = Field(
+        description="Product description, plain text which will be embedded"
+    )
+    groups: list[cat_t] = Field(
+        default_factory=list, description="List of groups. Don't filter if empty"
+    )
+    genders: list[gender_t] = Field(
+        default_factory=list, description="List of genders. Don't filter if empty"
+    )
     min_price: Optional[float] = Field(None, description="Minimum price")
     max_price: Optional[float] = Field(None, description="Maximum price")
 
@@ -41,23 +49,23 @@ async def product_by_uuid(uuid: str) -> dict:
     :param uuid: unique id of product
     :return: product if exists, empty dict otherwise
     """
-    point = await client.query_points(
-        collection_name="products",
-        query=uuid
-    )
+    point = await client.query_points(collection_name="products", query=uuid)
     if not point.points:
         return {}
     return point.points[0].payload
 
 
-@tool(args_schema=ProductFilterInput, description="Query a vector database of products.")
-async def query_product(name: str,
-                        description: str,
-                        groups: list[cat_t],
-                        genders: list[gender_t],
-                        min_price: Optional[float] = None,
-                        max_price: Optional[float] = None,
-                        ) -> list[dict]:
+@tool(
+    args_schema=ProductFilterInput, description="Query a vector database of products."
+)
+async def query_product(
+    name: str,
+    description: str,
+    groups: list[cat_t],
+    genders: list[gender_t],
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+) -> list[dict]:
     """
     Query a vector database of products.
     :param name: expected name of product
@@ -86,17 +94,13 @@ async def query_product(name: str,
     ]
     if groups:
         filters.append(
-            models.FieldCondition(
-                key="group",
-                match=MatchAny(any=groups_unique)
-            ))
+            models.FieldCondition(key="group", match=MatchAny(any=groups_unique))
+        )
 
     if genders:
         filters.append(
-            models.FieldCondition(
-                key="gender",
-                match=MatchAny(any=genders_unique)
-            ))
+            models.FieldCondition(key="gender", match=MatchAny(any=genders_unique))
+        )
 
     global_filter = models.Filter(must=filters)
 
@@ -109,7 +113,6 @@ async def query_product(name: str,
                 limit=10,
                 filter=global_filter,
             ),
-
             models.Prefetch(
                 query=desc_emb,
                 using="desc_emb",
@@ -124,16 +127,18 @@ async def query_product(name: str,
             "slug",
             "name",
             "description_plain",
-            "group", "subgroup", "gender",
+            "group",
+            "subgroup",
+            "gender",
             "colors[].color",
             "colors[].url",
             "colors[].price",
-        ]
+        ],
     )
 
     res = [x.payload for x in res.points]
 
     for p in res:
-        p['uuid'] = p.pop('slug')
+        p["uuid"] = p.pop("slug")
 
     return res

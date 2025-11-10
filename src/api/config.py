@@ -4,8 +4,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
 
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
     # langfuse
     langfuse_public_key: str
     langfuse_secret_key: SecretStr
@@ -21,4 +24,4 @@ class Settings(BaseSettings):
     qdrant_grpc_port: int
 
 
-settings = Settings() # type: ignore
+settings = Settings()  # type: ignore

@@ -15,7 +15,9 @@ compiled_state = CompiledStateGraph[MessagesState, None, MessagesState, Messages
 langfuse_handler = CallbackHandler()
 
 
-async def stream_graph_updates(user_input: str, graph: compiled_state, thread_id: str) -> AsyncGenerator[str, None]:
+async def stream_graph_updates(
+    user_input: str, graph: compiled_state, thread_id: str
+) -> AsyncGenerator[str, None]:
     chat_input: list[AnyMessage] = [HumanMessage(content=user_input)]
     config = RunnableConfig(
         configurable={"thread_id": thread_id},
@@ -26,9 +28,8 @@ async def stream_graph_updates(user_input: str, graph: compiled_state, thread_id
     )
 
     async for chunk, metadata in graph.astream(
-            MessagesState(messages=chat_input),
-            stream_mode="messages",
-            config=config):
+        MessagesState(messages=chat_input), stream_mode="messages", config=config
+    ):
         yield chunk.content
 
 
