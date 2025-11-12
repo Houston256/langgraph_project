@@ -10,13 +10,14 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from api.config import settings
 from graphs.prompts import SYSTEM_PROMPT
-from search.qdrant import query_product
+from search.qdrant import query_product, get_image
 
 MAX_TOOL_PER_RUN = 10
 
 summary_model = init_chat_model(
     "gpt-5-nano",
     reasoning_effort="minimal",
+    use_responses_api=True,
 )
 
 agent_model = init_chat_model(
@@ -26,6 +27,7 @@ agent_model = init_chat_model(
     max_tokens=5000,
     timeout=30,
     reasoning_effort="minimal",
+    use_responses_api=True,
 )
 
 reserve = agent_model.max_tokens + 1000
@@ -58,7 +60,7 @@ middleware = [
 def create_db_agent():
     return create_agent(
         agent_model,
-        tools=[query_product],
+        tools=[query_product, get_image],
         checkpointer=InMemorySaver(),
         system_prompt=SYSTEM_PROMPT,
         middleware=middleware,

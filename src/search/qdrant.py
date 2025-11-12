@@ -130,6 +130,7 @@ async def query_product(
             "group",
             "subgroup",
             "gender",
+            "colors[].code",
             "colors[].color",
             "colors[].url",
             "colors[].price",
@@ -142,3 +143,37 @@ async def query_product(
         p["uuid"] = p.pop("slug")
 
     return res
+
+def url_to_openai(url:str)-> dict[str, str]:
+    return {
+            "type": "image_url",
+            "image_url": {
+                "url": url
+            },
+        }
+
+@tool
+async def get_image(code: str)-> list[dict[str, str]]:
+    """
+    Get first image by color code.
+    :param code: color code retrieved by previous query_procuct call
+    :return: list of image(s)
+    """
+    images = await client.query_points(
+        collection_name="products",
+        limit=1,
+        query_filter=models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="colors[].code",
+                    match=models.MatchValue(value=code),
+                ),
+            ]
+        ),
+        with_payload=[
+            "colors[].images"
+        ],
+
+    )
+    img_url = images.points[0].payload["colors"][0]["images"][0]
+    return [url_to_openai(img_url)]
