@@ -1,7 +1,4 @@
-from typing import AsyncGenerator
-
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, AnyMessage
 from langchain_core.runnables import RunnableConfig
 from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.memory import InMemorySaver
@@ -14,24 +11,14 @@ compiled_state = CompiledStateGraph[MessagesState, None, MessagesState, Messages
 
 langfuse_handler = CallbackHandler()
 
-
-async def stream_graph_updates(
-    user_input: str, graph: compiled_state, thread_id: str
-) -> AsyncGenerator[str, None]:
-    chat_input: list[AnyMessage] = [HumanMessage(content=user_input)]
-    config = RunnableConfig(
+def create_config(thread_id: str) -> RunnableConfig:
+    return RunnableConfig(
         configurable={"thread_id": thread_id},
         callbacks=[langfuse_handler],
         metadata={
             "langfuse_session_id": thread_id,
         },
     )
-
-    async for chunk, metadata in graph.astream(
-        MessagesState(messages=chat_input), stream_mode="messages", config=config
-    ):
-        yield chunk.content
-
 
 async def chatbot(state: MessagesState, config: RunnableConfig):
     llm = init_chat_model(settings.model_name, streaming=True)

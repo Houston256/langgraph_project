@@ -1,5 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from typing import AsyncIterator
+from langfuse.langchain import CallbackHandler
 
 from chatkit.server import ChatKitServer
 from chatkit.types import (
@@ -15,9 +16,8 @@ from chatkit.types import (
     ThreadStreamEvent,
     AssistantMessageContent,
 )
-from langfuse.langchain import CallbackHandler
-
 from graphs.db_agent import create_db_agent
+from utils.streaming import stream_graph_updates, create_config
 
 
 def to_aware_utc(dt: datetime) -> datetime:
@@ -26,22 +26,11 @@ def to_aware_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
-def normalize_delta(c) -> str:
-    if isinstance(c, str):
-        return c
-    if isinstance(c, list):
-        out = []
-        for b in c:
-            if isinstance(b, dict):
-                out.append(b.get("text", ""))
-        return "".join(out)
-    return ""
-
-
 class LangGraphChatKitServer(ChatKitServer[dict]):
     def __init__(self, store):
         super().__init__(store)
         self.graph = create_db_agent()
+        self.langfuse_handler = CallbackHandler()
 
     async def respond(
         self,
@@ -112,29 +101,11 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
 
         full_text: list[str] = []
 
-        langfuse_handler = CallbackHandler()
-        config = {
-            "configurable": {"thread_id": thread.id},
-            "callbacks": [langfuse_handler],
-            "metadata": {"langfuse_session_id": thread.id},
-            "recursion_limit": 100,
-        }
+        config = create_config(thread_id=thread.id, langfuse_handler=self.langfuse_handler)
 
-        last = (
-            messages_for_graph[-1]
-            if messages_for_graph
-            else {"role": "user", "content": ""}
-        )
-        input_state = {"messages": [last]}
+        last = messages_for_graph[-1].get("content", "")
 
-        async for chunk, metadata in self.graph.astream(
-            input_state,
-            config=config,
-            stream_mode="messages",
-        ):
-            if metadata.get("langgraph_node") != "model":
-                continue
-            delta = normalize_delta(getattr(chunk, "content", ""))
+        async for delta in stream_graph_updates(last, self.graph, config):
             if not delta:
                 continue
             full_text.append(delta)
