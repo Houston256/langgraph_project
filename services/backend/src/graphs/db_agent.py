@@ -9,9 +9,14 @@ from langchain.chat_models import init_chat_model
 from langgraph.checkpoint.memory import InMemorySaver
 
 from api.config import settings
-from graphs.prompts import SYSTEM_PROMPT
 from search.qdrant import query_product, get_image
 
+from langfuse import get_client
+
+from search.qdrant import cat_t
+
+langfuse = get_client()
+SYSTEM_PROMPT = langfuse.get_prompt("shopping-assistant").compile(catalog=str(cat_t))
 MAX_TOOL_PER_RUN = 10
 
 summary_model = init_chat_model(
