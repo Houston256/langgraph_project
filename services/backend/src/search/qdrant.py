@@ -175,5 +175,8 @@ async def get_image(code: str)-> list[dict[str, str]]:
         ],
 
     )
-    img_url = images.points[0].payload["colors"][0]["images"][0]
+    try:
+        img_url = images.points[0].payload["colors"][0]["images"][0]
+    except IndexError:
+        return []
     return [url_to_openai(img_url)]

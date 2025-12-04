@@ -5,7 +5,7 @@ from langchain_ollama import OllamaEmbeddings
 from qdrant_client import QdrantClient, models
 from tqdm import tqdm
 
-from api.config import settings
+from backend.api.config import settings
 
 with open(Path(__file__).parent.parent.parent / "data" / "data.pickle", "rb") as f:
     points = pickle.load(f)["points"]
