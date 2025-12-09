@@ -2,12 +2,12 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 
-from backend.utils.streaming import stream_graph_updates, create_config
+from utils.streaming import stream_graph_updates, create_config
 from langfuse.langchain import CallbackHandler
 
 load_dotenv()
 from langfuse import get_client
-from backend.graphs.db_agent import create_db_agent
+from graphs.db_agent import create_db_agent
 agent = create_db_agent()
 
 langfuse = get_client()
@@ -30,7 +30,7 @@ dataset = langfuse.get_dataset("prompts")
 
 result = dataset.run_experiment(
     name="Production Model Test",
-    task=my_task,
+    task=my_task, # type: ignore
     max_concurrency=1
 )
 
