@@ -33,6 +33,7 @@ agent_model = init_chat_model(
     timeout=30,
     reasoning_effort="minimal",
     use_responses_api=True,
+    use_previous_response_id=True,
 )
 
 reserve = agent_model.max_tokens + 1000
