@@ -21,16 +21,25 @@ def create_config(thread_id: str, langfuse_handler) -> RunnableConfig:
     )
 
 async def stream_graph_updates(
-    user_input: str, graph: CompiledStateGraph, config, node_name: str = "model"
+    user_input: str,
+    graph: CompiledStateGraph,
+    config,
+    node_name: str = "model",
+    custom: bool = False,
 ):
     chat_input = [HumanMessage(content=user_input)]
+    stream_modes = ["messages"] + (["custom"] if custom else [])
 
-    async for chunk, metadata in graph.astream(
-            MessagesState(messages=chat_input),
-            stream_mode="messages",
-            config=config
+    async for mode, payload in graph.astream(
+        MessagesState(messages=chat_input),  # type: ignore
+        stream_mode=stream_modes,  # type: ignore
+        config=config,
     ):
-        if metadata.get("langgraph_node") != node_name:
-            continue
-
-        yield normalize_delta(getattr(chunk, "content", []))
+        if mode == "messages":
+            chunk, metadata = payload
+            if metadata.get("langgraph_node") != node_name:
+                continue
+            content = normalize_delta(getattr(chunk, "content", []))
+            yield (mode, content) if custom else content
+        elif custom:
+            yield mode, payload

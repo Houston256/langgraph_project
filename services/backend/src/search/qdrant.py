@@ -5,9 +5,8 @@ from langchain_ollama import OllamaEmbeddings
 from pydantic import BaseModel, Field, constr
 from qdrant_client import models, AsyncQdrantClient
 from qdrant_client.http.models import MatchAny
-
+from langgraph.config import get_stream_writer
 from api.config import settings
-
 client = AsyncQdrantClient(
     host=settings.qdrant_host,
     port=settings.qdrant_port,
@@ -76,6 +75,9 @@ async def query_product(
     :param max_price: maximal price of product
     :return: list of products which satisfy the query
     """
+    writer = get_stream_writer()
+
+    writer('Searching for products...')
 
     groups_unique = list(set(groups))
     genders_unique = list(set(genders))
@@ -159,6 +161,9 @@ async def get_image(code: str)-> list[dict[str, str]]:
     :param code: color code retrieved by previous query_procuct call
     :return: list of image(s)
     """
+    writer = get_stream_writer()
+    writer('Inspecting product images...')
+
     images = await client.query_points(
         collection_name="products",
         limit=1,
