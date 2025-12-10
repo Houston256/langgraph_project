@@ -1,5 +1,6 @@
 from datetime import datetime, timezone, timedelta
-from typing import AsyncIterator
+from typing import AsyncIterator, Iterable
+
 from langfuse.langchain import CallbackHandler
 
 from chatkit.server import ChatKitServer
@@ -8,13 +9,14 @@ from chatkit.types import (
     UserMessageItem,
     AssistantMessageItem,
     ThreadItemAddedEvent,
-    ThreadItemUpdated,
     ThreadItemDoneEvent,
     AssistantMessageContentPartTextDelta,
     AssistantMessageContentPartDone,
     AssistantMessageContentPartAdded,
     ThreadStreamEvent,
     AssistantMessageContent,
+    ProgressUpdateEvent,
+    ThreadItemUpdatedEvent,
 )
 from graphs.db_agent import create_db_agent
 from utils.streaming import stream_graph_updates, create_config
@@ -32,6 +34,56 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
         self.graph = create_db_agent()
         self.langfuse_handler = CallbackHandler()
 
+    @staticmethod
+    def _extract_text_messages(items: Iterable[object]) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
+
+        for item in items:
+            if isinstance(item, UserMessageItem):
+                for part in item.content:
+                    if part.type == "input_text":
+                        messages.append({"role": "user", "content": part.text})
+                continue
+
+            if isinstance(item, AssistantMessageItem):
+                buf: list[str] = []
+                for part in item.content:
+                    if part.type == "output_text":
+                        buf.append(part.text)
+                if buf:
+                    messages.append({"role": "assistant", "content": "".join(buf)})
+
+        return messages
+
+    @staticmethod
+    def _assistant_created_at(items: Iterable[object]) -> datetime:
+        times = [to_aware_utc(it.created_at) for it in items]
+        last_ts = max(times) if times else datetime.min.replace(tzinfo=timezone.utc)
+        return max(datetime.now(timezone.utc), last_ts + timedelta(microseconds=1))
+
+    @staticmethod
+    def _assistant_start_events(
+        thread: ThreadMetadata,
+        item_id: str,
+        created_at: datetime,
+    ) -> list[ThreadStreamEvent]:
+        item = AssistantMessageItem(
+            id=item_id,
+            thread_id=thread.id,
+            created_at=created_at,
+            content=[],
+        )
+        return [
+            ThreadItemAddedEvent(item=item),
+            ThreadItemUpdatedEvent(
+                item_id=item_id,
+                update=AssistantMessageContentPartAdded(
+                    content_index=0,
+                    content=AssistantMessageContent(text=""),
+                ),
+            ),
+        ]
+
     async def respond(
         self,
         thread: ThreadMetadata,
@@ -46,96 +98,75 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
             context=context,
         )
 
-        messages_for_graph: list[dict[str, str]] = []
         seen_ids = {it.id for it in thread_items_page.data}
-
-        for item in thread_items_page.data:
-            if isinstance(item, UserMessageItem):
-                for part in item.content:
-                    if part.type == "input_text":
-                        messages_for_graph.append(
-                            {"role": "user", "content": part.text}
-                        )
-            elif isinstance(item, AssistantMessageItem):
-                buf: list[str] = []
-                for part in item.content:
-                    if part.type == "output_text":
-                        buf.append(part.text)
-                if buf:
-                    messages_for_graph.append(
-                        {"role": "assistant", "content": "".join(buf)}
-                    )
+        messages_for_graph = self._extract_text_messages(thread_items_page.data)
 
         if input_user_message is not None and input_user_message.id not in seen_ids:
-            for part in input_user_message.content:
-                if part.type == "input_text":
-                    messages_for_graph.append({"role": "user", "content": part.text})
+            messages_for_graph.extend(self._extract_text_messages([input_user_message]))
 
-        item_times = [to_aware_utc(it.created_at) for it in thread_items_page.data]
-        last_ts = (
-            max(item_times) if item_times else datetime.min.replace(tzinfo=timezone.utc)
-        )
-        assistant_created_at = max(
-            datetime.now(timezone.utc), last_ts + timedelta(microseconds=1)
-        )
-
+        assistant_created_at = self._assistant_created_at(thread_items_page.data)
         assistant_item_id = self.store.generate_item_id("message", thread, context)
-        assistant_item = AssistantMessageItem(
-            id=assistant_item_id,
+
+        config = create_config(
             thread_id=thread.id,
-            created_at=assistant_created_at,
-            content=[],
-            type="assistant_message",
+            langfuse_handler=self.langfuse_handler,
         )
+        last = messages_for_graph[-1]["content"] if messages_for_graph else ""
 
-        yield ThreadItemAddedEvent(item=assistant_item)
-
-        yield ThreadItemUpdated(
-            item_id=assistant_item_id,
-            update=AssistantMessageContentPartAdded(
-                type="assistant_message.content_part.added",
-                content_index=0,
-                content=AssistantMessageContent(type="output_text", text=""),
-            ),
-        )
-
+        assistant_started = False
         full_text: list[str] = []
 
-        config = create_config(thread_id=thread.id, langfuse_handler=self.langfuse_handler)
-
-        last = messages_for_graph[-1].get("content", "")
-
-        async for delta in stream_graph_updates(last, self.graph, config):
+        async for msg_type, delta in stream_graph_updates(
+            last, self.graph, config, custom=True
+        ):
             if not delta:
                 continue
+
+            if msg_type == "custom" and not assistant_started:
+                yield ProgressUpdateEvent(icon="search", text=delta)
+                continue
+
+            if msg_type != "messages":
+                continue
+
+            if not assistant_started:
+                assistant_started = True
+                for ev in self._assistant_start_events(
+                    thread=thread,
+                    item_id=assistant_item_id,
+                    created_at=assistant_created_at,
+                ):
+                    yield ev
+
             full_text.append(delta)
-            yield ThreadItemUpdated(
+            yield ThreadItemUpdatedEvent(
                 item_id=assistant_item_id,
-                update=AssistantMessageContentPartTextDelta(
-                    type="assistant_message.content_part.text_delta",
-                    content_index=0,
-                    delta=delta,
-                ),
+                update=AssistantMessageContentPartTextDelta(content_index=0, delta=delta),
             )
 
-        final_text = "".join(full_text)
-        content = AssistantMessageContent(type="output_text", text=final_text)
+        if not assistant_started:
+            for ev in self._assistant_start_events(
+                thread=thread,
+                item_id=assistant_item_id,
+                created_at=assistant_created_at,
+            ):
+                yield ev
 
-        yield ThreadItemUpdated(
+        content = AssistantMessageContent(text="".join(full_text))
+
+        yield ThreadItemUpdatedEvent(
             item_id=assistant_item_id,
             update=AssistantMessageContentPartDone(
-                type="assistant_message.content_part.done",
                 content_index=0,
                 content=content,
             ),
         )
 
-        final_assistant_item = AssistantMessageItem(
-            id=assistant_item_id,
-            thread_id=thread.id,
-            created_at=assistant_item.created_at,
-            type="assistant_message",
-            content=[content],
+        yield ThreadItemDoneEvent(
+            item=AssistantMessageItem(
+                id=assistant_item_id,
+                thread_id=thread.id,
+                created_at=assistant_created_at,
+                content=[content],
+            )
         )
-
-        yield ThreadItemDoneEvent(item=final_assistant_item)
