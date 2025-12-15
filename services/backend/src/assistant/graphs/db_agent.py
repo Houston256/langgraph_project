@@ -23,7 +23,7 @@ class CustomAgentState(AgentState):
 
 langfuse = get_client()
 SYSTEM_PROMPT = langfuse.get_prompt("shopping-assistant").compile(catalog=str(cat_t))
-MAX_TOOL_PER_RUN = 10
+MAX_TOOL_PER_RUN = 40
 
 summary_model = init_chat_model(
     "gpt-5-nano",
