@@ -12,7 +12,6 @@ load_dotenv()
 agent = create_db_agent()
 
 langfuse = get_client()
-langfuse_handler = CallbackHandler()
 
 
 async def my_task(*, item, **kwargs):
@@ -22,22 +21,19 @@ async def my_task(*, item, **kwargs):
     async for part in stream_graph_updates(
         user_input=question,
         graph=agent,
-        config=create_config(thread_id, langfuse_handler),
+        config=create_config(thread_id, CallbackHandler()),
     ):
         response += part
-    print(question)
-    print(100 * "-")
-    print(response)
-    print(100 * "=")
     return response
 
 
-dataset = langfuse.get_dataset("prompts")
+def run_experiment(experiment_name: str, dataset_name: str):
+    dataset = langfuse.get_dataset(dataset_name)
 
-result = dataset.run_experiment(
-    name="Production Model Test",
-    task=my_task,  # type: ignore
-    max_concurrency=1,
-)
+    result = dataset.run_experiment(
+        name=experiment_name,
+        task=my_task,  # type: ignore
+        max_concurrency=10,
+    )
 
-print(result.format())
+    return result.format()
