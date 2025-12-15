@@ -44,7 +44,7 @@ async def stream_graph_updates(
             content = normalize_delta(getattr(chunk, "content", []))
             yield (mode, content) if custom else content
         elif mode == "updates":
-            if not isinstance(payload, dict):
+            if isinstance(payload, dict):
                 for node_updates in payload.values():
                     if isinstance(node_updates, dict):
                         widget = node_updates.get("widget")

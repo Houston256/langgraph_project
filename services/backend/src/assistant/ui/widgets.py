@@ -2,6 +2,7 @@
 Product card widgets for ChatKit UI.
 """
 
+from chatkit.actions import ActionConfig
 from chatkit.widgets import (
     Card,
     Col,
@@ -12,7 +13,6 @@ from chatkit.widgets import (
     Text,
     WidgetRoot,
 )
-from chatkit.actions import ActionConfig
 
 
 def build_product_card(
@@ -23,18 +23,18 @@ def build_product_card(
 ) -> Card:
     """
     Build a single product card widget.
-    
+
     Args:
         name: Product name
         image_url: URL to product image
         product_url: URL to product page (for click action)
         price: Optional product price
-    
+
     Returns:
         Card widget with product information
     """
     children = []
-    
+
     # Add image if available
     if image_url:
         children.append(
@@ -47,7 +47,7 @@ def build_product_card(
                 radius="md",
             )
         )
-    
+
     # Add product name
     children.append(
         Text(
@@ -57,7 +57,7 @@ def build_product_card(
             color="emphasis",
         )
     )
-    
+
     # Add price if available
     if price is not None:
         children.append(
@@ -67,7 +67,7 @@ def build_product_card(
                 color="secondary",
             )
         )
-    
+
     return Card(
         children=[
             Col(
@@ -87,18 +87,18 @@ def build_product_list_item(
 ) -> ListViewItem:
     """
     Build a single product list item for use in a ListView.
-    
+
     Args:
         name: Product name
         image_url: URL to product image
         product_url: URL to product page (for click action)
         price: Optional product price
-    
+
     Returns:
         ListViewItem widget with product information
     """
     children = []
-    
+
     # Add image if available
     if image_url:
         children.append(
@@ -111,7 +111,7 @@ def build_product_list_item(
                 frame=True,
             )
         )
-    
+
     # Add product details column
     detail_children = [
         Text(
@@ -120,7 +120,7 @@ def build_product_list_item(
             color="emphasis",
         )
     ]
-    
+
     if price is not None:
         detail_children.append(
             Text(
@@ -129,9 +129,9 @@ def build_product_list_item(
                 color="secondary",
             )
         )
-    
+
     children.append(Col(children=detail_children))
-    
+
     return ListViewItem(
         gap=3,
         children=children,
@@ -146,25 +146,25 @@ def build_product_list_item(
 def build_products_list(products: list[dict]) -> WidgetRoot:
     """
     Build a ListView widget containing multiple product cards.
-    
+
     Args:
         products: List of product dictionaries with keys:
             - name: Product name
             - url: Product page URL
             - price: Product price
             - image: Product image URL
-    
+
     Returns:
         ListView widget containing product items
     """
     items = []
-    
+
     for product in products:
         name = product.get("name", "Unknown Product")
         image_url = product.get("image")
         product_url = product.get("url", "")
         price = product.get("price")
-        
+
         items.append(
             build_product_list_item(
                 name=name,
@@ -173,7 +173,7 @@ def build_products_list(products: list[dict]) -> WidgetRoot:
                 price=price,
             )
         )
-    
+
     return ListView(
         children=items,
         limit=5,

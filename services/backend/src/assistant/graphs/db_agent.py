@@ -1,26 +1,25 @@
-from typing import Optional, Any
+from typing import Any, Optional
 
-from langchain.agents import create_agent, AgentState
+from langchain.agents import AgentState, create_agent
 from langchain.agents.middleware import (
+    ClearToolUsesEdit,
+    ContextEditingMiddleware,
     SummarizationMiddleware,
     ToolCallLimitMiddleware,
-    ContextEditingMiddleware,
-    ClearToolUsesEdit,
 )
 from langchain.chat_models import init_chat_model
+from langfuse import get_client
 from langgraph.checkpoint.memory import InMemorySaver
 
-from api.config import settings
-from search.qdrant import query_product, get_image, display_products
+from assistant.api.config import settings
+from assistant.search.qdrant import cat_t, display_products, get_image, query_product
 
 
 class CustomAgentState(AgentState):
     """Extended agent state with widget field."""
+
     widget: Optional[dict[str, Any]]
 
-from langfuse import get_client
-
-from search.qdrant import cat_t
 
 langfuse = get_client()
 SYSTEM_PROMPT = langfuse.get_prompt("shopping-assistant").compile(catalog=str(cat_t))

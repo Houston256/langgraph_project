@@ -5,7 +5,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.graph.state import CompiledStateGraph
 
-from api.config import settings
+from assistant.api.config import settings
 
 compiled_state = CompiledStateGraph[MessagesState, None, MessagesState, MessagesState]
 

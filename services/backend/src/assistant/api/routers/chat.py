@@ -2,9 +2,9 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from graphs.chat import create_graph
-from graphs.db_agent import create_db_agent
-from utils.streaming import stream_graph_updates
+from assistant.graphs.chat import create_graph
+from assistant.graphs.db_agent import create_db_agent
+from assistant.utils.streaming import stream_graph_updates
 
 
 class ClientMessage(BaseModel):

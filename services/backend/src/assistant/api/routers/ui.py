@@ -1,9 +1,9 @@
 from chatkit.server import StreamingResult
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse, Response
-from ui.store import MemoryStore
-from ui.server import LangGraphChatKitServer
+from fastapi.responses import Response, StreamingResponse
 
+from assistant.ui.server import LangGraphChatKitServer
+from assistant.ui.store import MemoryStore
 
 router = APIRouter(
     prefix="/ui",
