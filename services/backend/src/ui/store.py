@@ -1,17 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, UTC, timezone
+from datetime import datetime, UTC
 from typing import Any, Dict, List
 
 from chatkit.store import NotFoundError, Store
 from chatkit.types import Attachment, Page, Thread, ThreadItem, ThreadMetadata
-
-
-def to_aware_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
 
 
 @dataclass
@@ -117,12 +111,8 @@ class MemoryStore(Store[dict[str, Any]]):
         context: dict[str, Any],
     ) -> Page[ThreadItem]:
         items = [item.model_copy(deep=True) for item in self._items(thread_id)]
-        items.sort(
-            key=lambda item: to_aware_utc(
-                getattr(item, "created_at", datetime.now(UTC))
-            ),
-            reverse=(order == "desc"),
-        )
+        if order == "desc":
+            items = list(reversed(items))
 
         if after:
             index_map = {item.id: idx for idx, item in enumerate(items)}

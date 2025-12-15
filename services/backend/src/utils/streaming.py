@@ -11,6 +11,7 @@ def normalize_delta(c: list) -> str:
             out += b.get("text", "")
     return out
 
+
 def create_config(thread_id: str, langfuse_handler) -> RunnableConfig:
     return RunnableConfig(
         configurable={"thread_id": thread_id},
@@ -20,6 +21,7 @@ def create_config(thread_id: str, langfuse_handler) -> RunnableConfig:
         },
     )
 
+
 async def stream_graph_updates(
     user_input: str,
     graph: CompiledStateGraph,
@@ -28,7 +30,7 @@ async def stream_graph_updates(
     custom: bool = False,
 ):
     chat_input = [HumanMessage(content=user_input)]
-    stream_modes = ["messages"] + (["custom"] if custom else [])
+    stream_modes = ["messages"] + (["updates", "custom"] if custom else [])
 
     async for mode, payload in graph.astream(
         MessagesState(messages=chat_input),  # type: ignore
@@ -41,5 +43,12 @@ async def stream_graph_updates(
                 continue
             content = normalize_delta(getattr(chunk, "content", []))
             yield (mode, content) if custom else content
+        elif mode == "updates":
+            if not isinstance(payload, dict):
+                for node_updates in payload.values():
+                    if isinstance(node_updates, dict):
+                        widget = node_updates.get("widget")
+                        if widget is not None:
+                            yield ("widget", widget)
         elif custom:
             yield mode, payload

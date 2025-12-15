@@ -1,9 +1,7 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import AsyncIterator, Iterable
 
-from langfuse.langchain import CallbackHandler
-
-from chatkit.server import ChatKitServer
+from chatkit.server import ChatKitServer, stream_widget
 from chatkit.types import (
     ThreadMetadata,
     UserMessageItem,
@@ -18,14 +16,11 @@ from chatkit.types import (
     ProgressUpdateEvent,
     ThreadItemUpdatedEvent,
 )
+from langfuse.langchain import CallbackHandler
+
 from graphs.db_agent import create_db_agent
+from ui.widgets import build_products_list
 from utils.streaming import stream_graph_updates, create_config
-
-
-def to_aware_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
 
 
 class LangGraphChatKitServer(ChatKitServer[dict]):
@@ -56,16 +51,10 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
         return messages
 
     @staticmethod
-    def _assistant_created_at(items: Iterable[object]) -> datetime:
-        times = [to_aware_utc(it.created_at) for it in items]
-        last_ts = max(times) if times else datetime.min.replace(tzinfo=timezone.utc)
-        return max(datetime.now(timezone.utc), last_ts + timedelta(microseconds=1))
-
-    @staticmethod
     def _assistant_start_events(
-        thread: ThreadMetadata,
-        item_id: str,
-        created_at: datetime,
+            thread: ThreadMetadata,
+            item_id: str,
+            created_at: datetime,
     ) -> list[ThreadStreamEvent]:
         item = AssistantMessageItem(
             id=item_id,
@@ -85,10 +74,10 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
         ]
 
     async def respond(
-        self,
-        thread: ThreadMetadata,
-        input_user_message: UserMessageItem | None,
-        context: dict,
+            self,
+            thread: ThreadMetadata,
+            input_user_message: UserMessageItem | None,
+            context: dict,
     ) -> AsyncIterator[ThreadStreamEvent]:
         thread_items_page = await self.store.load_thread_items(
             thread.id,
@@ -104,7 +93,6 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
         if input_user_message is not None and input_user_message.id not in seen_ids:
             messages_for_graph.extend(self._extract_text_messages([input_user_message]))
 
-        assistant_created_at = self._assistant_created_at(thread_items_page.data)
         assistant_item_id = self.store.generate_item_id("message", thread, context)
 
         config = create_config(
@@ -114,16 +102,35 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
         last = messages_for_graph[-1]["content"] if messages_for_graph else ""
 
         assistant_started = False
+        assistant_created_at: datetime | None = None
         full_text: list[str] = []
 
         async for msg_type, delta in stream_graph_updates(
-            last, self.graph, config, custom=True
+                last, self.graph, config, custom=True
         ):
             if not delta:
                 continue
 
-            if msg_type == "custom" and not assistant_started:
-                yield ProgressUpdateEvent(icon="search", text=delta)
+            if msg_type == "widget":
+                if isinstance(delta, dict) and delta.get("type") == "products_widget":
+                    products = delta.get("products", [])
+                    if products:
+                        widget = build_products_list(products)
+                        async for event in stream_widget(
+                                thread,
+                                widget,
+                                copy_text=f"Found {len(products)} product(s)",
+                                generate_id=lambda item_type: self.store.generate_item_id(
+                                    item_type, thread, context
+                                ),
+                        ):
+                            yield event
+                continue
+
+            # Handle custom events (progress messages only)
+            if msg_type == "custom":
+                if not assistant_started and isinstance(delta, str):
+                    yield ProgressUpdateEvent(icon="search", text=delta)
                 continue
 
             if msg_type != "messages":
@@ -131,10 +138,11 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
 
             if not assistant_started:
                 assistant_started = True
+                assistant_created_at = datetime.now(timezone.utc)
                 for ev in self._assistant_start_events(
-                    thread=thread,
-                    item_id=assistant_item_id,
-                    created_at=assistant_created_at,
+                        thread=thread,
+                        item_id=assistant_item_id,
+                        created_at=assistant_created_at,
                 ):
                     yield ev
 
@@ -145,10 +153,11 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
             )
 
         if not assistant_started:
+            assistant_created_at = datetime.now(timezone.utc)
             for ev in self._assistant_start_events(
-                thread=thread,
-                item_id=assistant_item_id,
-                created_at=assistant_created_at,
+                    thread=thread,
+                    item_id=assistant_item_id,
+                    created_at=assistant_created_at,
             ):
                 yield ev
 

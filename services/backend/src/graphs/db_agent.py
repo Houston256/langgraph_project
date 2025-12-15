@@ -1,4 +1,6 @@
-from langchain.agents import create_agent
+from typing import Optional, Any
+
+from langchain.agents import create_agent, AgentState
 from langchain.agents.middleware import (
     SummarizationMiddleware,
     ToolCallLimitMiddleware,
@@ -9,7 +11,12 @@ from langchain.chat_models import init_chat_model
 from langgraph.checkpoint.memory import InMemorySaver
 
 from api.config import settings
-from search.qdrant import query_product, get_image
+from search.qdrant import query_product, get_image, display_products
+
+
+class CustomAgentState(AgentState):
+    """Extended agent state with widget field."""
+    widget: Optional[dict[str, Any]]
 
 from langfuse import get_client
 
@@ -21,19 +28,18 @@ MAX_TOOL_PER_RUN = 10
 
 summary_model = init_chat_model(
     "gpt-5-nano",
-    reasoning_effort="minimal",
+    reasoning_effort="low",
     use_responses_api=True,
 )
 
 agent_model = init_chat_model(
     settings.model_name,
     streaming=True,
-    temperature=0.4,
+    temperature=0.1,
     max_tokens=5000,
     timeout=30,
-    reasoning_effort="minimal",
+    reasoning_effort="low",
     use_responses_api=True,
-    use_previous_response_id=True,
 )
 
 reserve = agent_model.max_tokens + 1000
@@ -66,8 +72,9 @@ middleware = [
 def create_db_agent():
     return create_agent(
         agent_model,
-        tools=[query_product, get_image],
+        tools=[query_product, get_image, display_products],
         checkpointer=InMemorySaver(),
         system_prompt=SYSTEM_PROMPT,
         middleware=middleware,
+        state_schema=CustomAgentState,
     )

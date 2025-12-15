@@ -19,6 +19,16 @@ export default function App() {
                 }),
         },
         history: {enabled: true},
+        widgets: {
+            onAction: async (action, _widgetItem) => {
+                if (action.type === "open_url") {
+                    const payload = action.payload as { url?: string };
+                    if (payload?.url) {
+                        window.open(payload.url, "_blank", "noopener,noreferrer");
+                    }
+                }
+            },
+        },
     });
     return (
         <div
