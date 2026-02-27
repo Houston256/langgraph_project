@@ -19,7 +19,7 @@ from chatkit.types import (
 from langfuse.langchain import CallbackHandler
 
 from assistant.graphs.db_agent import create_db_agent
-from assistant.ui.widgets import build_products_list
+from assistant.ui.widgets import build_products_carousel
 from assistant.utils.streaming import create_config, stream_graph_updates
 
 
@@ -115,7 +115,7 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
                 if isinstance(delta, dict) and delta.get("type") == "products_widget":
                     products = delta.get("products", [])
                     if products:
-                        widget = build_products_list(products)
+                        widget = build_products_carousel(products)
                         async for event in stream_widget(
                             thread,
                             widget,
