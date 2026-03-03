@@ -6,7 +6,7 @@ from qdrant_client import QdrantClient, models
 
 from assistant.api.config import settings
 
-with open(Path(__file__).parents[6] / "data" / "data.pickle", "rb") as f:
+with open(Path(__file__).parents[5] / "data" / "data.pickle", "rb") as f:
     points = pickle.load(f)["points"]
 
 names = [x["payload"]["name"] for x in points]
