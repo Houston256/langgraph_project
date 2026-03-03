@@ -3,7 +3,7 @@ from typing import Annotated, Literal, Optional
 from langchain.tools import tool
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import InjectedToolCallId
-from langchain_ollama import OllamaEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langgraph.config import get_stream_writer
 from langgraph.types import Command
 from pydantic import BaseModel, Field, constr
@@ -21,7 +21,7 @@ client = AsyncQdrantClient(
     prefer_grpc=True,
 )
 
-embeddings = OllamaEmbeddings(model="qwen3-embedding:4b")
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
 cat_t = Literal["BOTY", "OBLEČENÍ", "BRÝLE", "DOPLŇKY", "VÝSTROJ", "OSTATNÍ"]
 gender_t = Literal["Dětské", "Dámské", "Pánské", "Uni"]
@@ -40,10 +40,11 @@ class ProductFilterInput(BaseModel):
         default_factory=list, description="List of groups. Don't filter if empty"
     )
     genders: list[gender_t] = Field(
-        default_factory=list, description="List of genders. Don't filter if empty"
+        default_factory=list,
+        description='List of genders. Don\'t filter if empty. Prefer ["Pánské", "Uni"] for men, ["Dámské", "Uni"] for women.',
     )
-    min_price: Optional[float] = Field(None, description="Minimum price")
-    max_price: Optional[float] = Field(None, description="Maximum price")
+    min_price: Optional[float] = Field(None, description="Minimum price, don't filter if None")
+    max_price: Optional[float] = Field(None, description="Maximum price, don't filter if None")
 
 
 @tool(parse_docstring=True)
@@ -64,7 +65,12 @@ async def product_by_uuid(uuid: str) -> dict:
 
 @tool(
     args_schema=ProductFilterInput,
-    description="Query a vector database of products to find matching items based on semantic search and filters.",
+    description=(
+        "Query a vector database of products. "
+        "name and description are embedded for semantic RANKING only — they control result order, not filtering. "
+        "Changing their wording won't fix empty results. "
+        "groups, genders, min_price, max_price are hard FILTERS — if no results, loosen or remove them."
+    ),
 )
 async def query_product(
     name: str,

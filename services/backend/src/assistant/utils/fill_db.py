@@ -1,33 +1,24 @@
 import pickle
 from pathlib import Path
 
-from langchain_ollama import OllamaEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from qdrant_client import QdrantClient, models
-from tqdm import tqdm
 
 from assistant.api.config import settings
 
-with open(Path(__file__).parent.parent.parent / "data" / "data.pickle", "rb") as f:
+with open(Path(__file__).parents[6] / "data" / "data.pickle", "rb") as f:
     points = pickle.load(f)["points"]
 
 names = [x["payload"]["name"] for x in points]
 descriptions = [x["payload"]["description_plain"] for x in points]
 
-embeddings = OllamaEmbeddings(
-    model="qwen3-embedding:4b",
-)
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
 
-def embed_with_progress(emb, texts, desc="embedding"):
-    """Embed texts in large batches and show a fast progress bar."""
-    out = []
-    for doc in tqdm(texts, desc=desc):
-        out.extend(emb.embed_documents(doc))
-    return out
-
-
-names_emb = embed_with_progress(embeddings, names, "embedding names")
-desc_emb = embed_with_progress(embeddings, descriptions, "embedding descriptions")
+print(f"Embedding {len(names)} names...")
+names_emb = embeddings.embed_documents(names)
+print(f"Embedding {len(descriptions)} descriptions...")
+desc_emb = embeddings.embed_documents(descriptions)
 
 emb_length = len(desc_emb[0])
 
