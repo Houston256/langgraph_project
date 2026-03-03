@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from typing import AsyncIterator, Iterable
 
@@ -24,10 +25,11 @@ from assistant.utils.streaming import create_config, stream_graph_updates
 
 
 class LangGraphChatKitServer(ChatKitServer[dict]):
-    def __init__(self, store):
+    def __init__(self, store, delta_coalesce_interval_ms: float = 50):
         super().__init__(store)
         self.graph = create_db_agent()
         self.langfuse_handler = CallbackHandler()
+        self.delta_coalesce_interval_ms = delta_coalesce_interval_ms
 
     @staticmethod
     def _extract_text_messages(items: Iterable[object]) -> list[dict[str, str]]:
@@ -104,6 +106,10 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
         assistant_started = False
         assistant_created_at: datetime | None = None
         full_text: list[str] = []
+        coalesce_buf: list[str] = []
+        coalesce_interval = self.delta_coalesce_interval_ms / 1000.0
+        loop = asyncio.get_running_loop()
+        last_flush = loop.time()
 
         async for msg_type, delta in stream_graph_updates(
             last, self.graph, config, custom=True
@@ -146,11 +152,29 @@ class LangGraphChatKitServer(ChatKitServer[dict]):
                 ):
                     yield ev
 
-            full_text.append(delta)
+            now = loop.time()
+            coalesce_buf.append(delta)
+            if now - last_flush >= coalesce_interval:
+                flushed = "".join(coalesce_buf)
+                coalesce_buf.clear()
+                last_flush = now
+                full_text.append(flushed)
+                yield ThreadItemUpdatedEvent(
+                    item_id=assistant_item_id,
+                    update=AssistantMessageContentPartTextDelta(
+                        content_index=0, delta=flushed
+                    ),
+                )
+
+        # Flush any remaining buffered deltas
+        if coalesce_buf:
+            flushed = "".join(coalesce_buf)
+            coalesce_buf.clear()
+            full_text.append(flushed)
             yield ThreadItemUpdatedEvent(
                 item_id=assistant_item_id,
                 update=AssistantMessageContentPartTextDelta(
-                    content_index=0, delta=delta
+                    content_index=0, delta=flushed
                 ),
             )
 

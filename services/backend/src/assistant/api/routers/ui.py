@@ -1,3 +1,5 @@
+import os
+
 from chatkit.server import StreamingResult
 from fastapi import APIRouter, Request
 from fastapi.responses import Response, StreamingResponse
@@ -12,7 +14,8 @@ router = APIRouter(
 )
 
 data_store = MemoryStore()
-server = LangGraphChatKitServer(data_store)
+delta_coalesce_ms = float(os.environ.get("DELTA_COALESCE_MS", "100")) # without coalescing, ChatKit can't keep up with
+server = LangGraphChatKitServer(data_store, delta_coalesce_interval_ms=delta_coalesce_ms)
 
 
 @router.post(
