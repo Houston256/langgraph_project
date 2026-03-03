@@ -1,0 +1,9 @@
+service:
+  http_port: 6333
+  grpc_port: 6334
+
+storage:
+  temp_path: /qdrant/tmp
+  snapshots_path: /qdrant/snapshots
+
+telemetry_disabled: true

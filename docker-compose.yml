@@ -1,60 +1,36 @@
 
 services:
   qdrant:
-    # 👉 Pin to a specific version you’ve validated in staging.
-    # Replace with the exact version you want (e.g., "v1.8.4"). Avoid :latest in prod.
-    image: qdrant/qdrant:v1.15.5
+    # v1.17.0-unprivileged — hardened image (non-root, minimal privileges baked in)
+    image: qdrant/qdrant@sha256:8dbc4655e2fe3e8649cad26ca6040dbfe0ac75663bd67b28a639166884ae6627
     container_name: qdrant
     restart: unless-stopped
+    # https://qdrant.tech/documentation/guides/security/
+    # Run unprivileged inside the container
+    user: "1000:1000"
 
-    # Run unprivileged inside the container (adjust UID:GID to match your host user if needed)
-#    user: "1000:1000" TODO
+    # Read-only root filesystem — only named volumes and tmpfs are writable
+    read_only: true
 
-    # Persist data & (optionally) mount a custom config and snapshots directory
+    # Persist data & snapshots on named volumes
     volumes:
       - qdrant_data:/qdrant/storage
-      # Uncomment if you want to use your own config.yml
-      # - ./config/qdrant.yaml:/qdrant/config/production.yaml:ro
       - qdrant_snapshots:/qdrant/snapshots
-
-    # Open HTTP (6333) and gRPC (6334)
-    ports:
-      - "6333:6333"   # HTTP API / REST
-      - "6334:6334"   # gRPC API
-
+      - ./config/qdrant.yaml:/qdrant/config/production.yaml:ro
+    tmpfs:
+      - /qdrant/tmp:size=256m,uid=1000,gid=1000
+      - /tmp:size=64m,uid=1000,gid=1000
     environment:
-      # Service ports (don’t change unless you also change the port mapping above)
-      QDRANT__SERVICE__HTTP_PORT: "6333"
-      QDRANT__SERVICE__GRPC_PORT: "6334"
-
-      # Tuning (pick values that match your box/workload)
-      # Number of worker threads; leave empty to let Qdrant auto-detect.
-      # QDRANT__STORAGE__PERFORMANCE_MAX_SEARCH_THREADS: "0"
-      # Temp dir (keep inside container; data is under /qdrant/storage)
-      QDRANT__STORAGE__TEMP_PATH: "/qdrant/tmp"
-
-      # Snapshots location
-      QDRANT__STORAGE__SNAPSHOTS_PATH: "/qdrant/snapshots"
-
-      # Optional: enable metrics at /metrics
-      QDRANT__TELEMETRY__PROMETHEUS__ENDPOINT: "/metrics"
-
-      # Optional: set a cluster node ID if you’ll later form a cluster
-      # QDRANT__CLUSTER__ENABLED: "true"
-      # QDRANT__CLUSTER__PEER_ID: "qdrant-1"
-
-      # Optional (behind a trusted reverse proxy with TLS + auth):
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?}
 
-    # Healthcheck tries the readiness endpoint; falls back to root if needed
+    # Healthcheck via TCP probe
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:6333/readyz || curl -fsS http://localhost:6333/"]
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/6333'"]
       interval: 10s
       timeout: 3s
       retries: 10
       start_period: 15s
 
-    # Reasonable defaults; tune to your host
     deploy:
       resources:
         limits:
@@ -64,22 +40,84 @@ services:
           cpus: "1.0"
           memory: 2g
 
-    # Extra hardening (safe defaults)
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
 
-    # Container logging (rotate on host docker engine)
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "5"
 
-    # If you use an internal network with a proxy / app
+    # Only on internal network — reachable by backend, not by frontend
     networks:
       - qdrant_net
+
+  backend:
+    init: true
+    build: services/backend/
+    container_name: backend
+    restart: unless-stopped
+    read_only: true
+    env_file: .env
+    environment:
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      QDRANT_GRPC_PORT: "6334"
+    tmpfs:
+      - /tmp:size=128m
+    depends_on:
+      qdrant:
+        condition: service_healthy
+#    healthcheck:
+#      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/ui/health\")'"]
+#      interval: 10s
+#      timeout: 3s
+#      retries: 5
+#      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - app_net
+      - qdrant_net
+
+  frontend:
+    build: services/frontend/
+    container_name: frontend
+    restart: unless-stopped
+    read_only: true
+    ports:
+      - "127.0.0.1:3000:80"
+    tmpfs:
+      - /tmp:size=32m
+      - /var/cache/nginx:size=64m
+      - /run:size=8m
+    depends_on:
+#      backend:
+#        condition: service_healthy
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - app_net
 
 volumes:
   qdrant_data:
@@ -88,5 +126,8 @@ volumes:
     driver: local
 
 networks:
+  app_net:
+    driver: bridge
   qdrant_net:
     driver: bridge
+    internal: true

@@ -1,6 +1,6 @@
 import {ChatKit, useChatKit} from "@openai/chatkit-react";
 
-const API_URL = "http://localhost:8000/ui/chat";
+const API_URL = "/ui/chat";
 const DOMAIN_KEY = "local-dev";
 const AUTH_TOKEN = "dev-user-123";
 
