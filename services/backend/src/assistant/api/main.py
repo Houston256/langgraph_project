@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from assistant.api.routers import chat, eval, ui
+from assistant.api.routers import chat, eval
 
 app = FastAPI()
 
@@ -20,7 +20,6 @@ app.add_middleware(
 )
 
 app.include_router(chat.router)
-app.include_router(ui.router)
 app.include_router(eval.router)
 
 
