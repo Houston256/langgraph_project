@@ -1,8 +1,45 @@
+# Shared by backend, worker and sync: same image, env and hardening.
+x-app: &app
+  build: services/backend/
+  init: true
+  restart: unless-stopped
+  read_only: true
+  env_file: .env
+  environment:
+    QDRANT_HOST: qdrant
+    QDRANT_PORT: "6333"
+    QDRANT_GRPC_PORT: "6334"
+    POSTGRES_URL: postgresql://${POSTGRES_USER:-assistant}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-assistant}
+  tmpfs:
+    - /tmp:size=128m
+  depends_on:
+    qdrant:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging: &logging
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "5"
+  networks:
+    # app_net for outbound calls (OpenRouter, the product feed)
+    - app_net
+    - qdrant_net
+    - db_net
+
+# Local system prompt (gitignored); edits apply without a restart
+x-prompt: &prompt
+  - ./services/backend/prompts:/app/prompts:ro
 
 services:
   qdrant:
-    # v1.17.0-unprivileged — hardened image (non-root, minimal privileges baked in)
-    image: qdrant/qdrant@sha256:8dbc4655e2fe3e8649cad26ca6040dbfe0ac75663bd67b28a639166884ae6627
+    # v1.19.2-unprivileged — hardened image (non-root, minimal privileges baked in)
+    image: qdrant/qdrant@sha256:efb96a9425a90d2d5a1a0a474156280df1892dcdf1af3e8515bd2589b1bfd88b
     container_name: qdrant
     restart: unless-stopped
     # https://qdrant.tech/documentation/guides/security/
@@ -22,6 +59,11 @@ services:
       - /tmp:size=64m,uid=1000,gid=1000
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?}
+
+    # Bound to loopback only — reachable from the host, not from the network
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
 
     # Healthcheck via TCP probe
     healthcheck:
@@ -45,54 +87,144 @@ services:
     cap_drop:
       - ALL
 
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *logging
 
-    # Only on internal network — reachable by backend only
     networks:
+      # app_net carries the published ports, qdrant_net the backend traffic
+      - app_net
       - qdrant_net
 
-  backend:
-    init: true
-    build: services/backend/
-    container_name: backend
+  postgres:
+    # 18.6-alpine
+    image: postgres@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    container_name: postgres
     restart: unless-stopped
+    # uid/gid of the postgres user in the alpine image; running as it up front
+    # keeps the entrypoint from needing setuid to drop privileges
+    user: "70:70"
+
     read_only: true
-    env_file: .env
+
     environment:
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: "6333"
-      QDRANT_GRPC_PORT: "6334"
+      POSTGRES_DB: ${POSTGRES_DB:-assistant}
+      POSTGRES_USER: ${POSTGRES_USER:-assistant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      # Refuse unauthenticated connections even on the container network
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+
+    volumes:
+      # Postgres 18+ keeps each major version in its own subdirectory (18/docker), so pg_upgrade works in place.
+      - pgdata:/var/lib/postgresql
     tmpfs:
-      - /tmp:size=128m
-    depends_on:
-      qdrant:
-        condition: service_healthy
+      - /var/run/postgresql:size=16m,uid=70,gid=70
+      - /tmp:size=64m,uid=70,gid=70
+
+    # Default 64m /dev/shm is too small for parallel query workers
+    shm_size: 256mb
+
+    ports:
+      - "127.0.0.1:5432:5432"
+
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-assistant} -d ${POSTGRES_DB:-assistant}"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+    # Give checkpoints time to flush instead of getting SIGKILLed
+    stop_grace_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+        reservations:
+          cpus: "0.5"
+          memory: 512m
+
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
+
+    logging: *logging
+
     networks:
       - app_net
-      - qdrant_net
+      - db_net
+
+  backend:
+    <<: *app
+    container_name: backend
+    volumes: *prompt
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # The one published port: SPA + /api proxy. Point the VPS proxy here.
+  frontend:
+    build: services/frontend/
+    container_name: frontend
+    restart: unless-stopped
+    read_only: true
+    ports:
+      - "127.0.0.1:8080:8080"
+    tmpfs:
+      - /tmp:size=32m
+      - /var/cache/nginx:size=64m
+    depends_on:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *logging
+    networks:
+      - app_net
+
+  # Scale with: docker compose up --scale worker=N
+  worker:
+    <<: *app
+    command: ["python", "-m", "assistant.worker"]
+    volumes: *prompt
+    # Running runs get shutdown_grace_seconds (100) to finish on SIGTERM, then are handed back.
+    stop_grace_period: 120s
+
+  # Product feed -> Qdrant: at start, then daily at CATALOG_SYNC_TIME
+  sync:
+    <<: *app
+    command: ["python", "-m", "assistant.catalog.sync"]
+    tmpfs:
+      - /tmp:size=64m
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
 volumes:
   qdrant_data:
     driver: local
   qdrant_snapshots:
     driver: local
+  pgdata:
+    driver: local
 
 networks:
   app_net:
     driver: bridge
   qdrant_net:
+    driver: bridge
+    internal: true
+  db_net:
     driver: bridge
     internal: true
