@@ -3,7 +3,8 @@ from langchain_openai import OpenAIEmbeddings
 from qdrant_client import QdrantClient, models
 from qdrant_client.http.models import MatchAny
 
-from assistant.api.config import settings
+from assistant.config import settings
+from assistant.models import embeddings
 
 GROUPS = ["BOTY", "OBLEČENÍ", "BRÝLE", "DOPLŇKY", "VÝSTROJ", "OSTATNÍ"]
 GENDERS = ["Dětské", "Dámské", "Pánské", "Uni"]
@@ -37,7 +38,7 @@ def get_client() -> QdrantClient:
 
 @st.cache_resource
 def get_embeddings() -> OpenAIEmbeddings:
-    return OpenAIEmbeddings(model="text-embedding-3-large")
+    return embeddings()
 
 
 def search(
