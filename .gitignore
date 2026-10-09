@@ -216,3 +216,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 data/
+# Local system prompt, iterated outside git
+services/backend/prompts/
+# Local eval cases, specific to the shop
+services/backend/evals/*
+!services/backend/evals/README.md
+# Local notes
+TODO.md
