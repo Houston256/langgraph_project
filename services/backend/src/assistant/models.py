@@ -16,6 +16,7 @@ def chat_model(name: str, **kwargs: Any) -> BaseChatModel:
         name,
         model_provider="openai",
         base_url=settings.openai_base_url,
+        api_key=settings.openai_api_key,
         timeout=TIMEOUT_SECONDS,
         **kwargs,
     )
@@ -25,6 +26,7 @@ def embeddings() -> OpenAIEmbeddings:
     return OpenAIEmbeddings(
         model=settings.embedding_model,
         base_url=settings.openai_base_url,
+        api_key=settings.openai_api_key,
         timeout=TIMEOUT_SECONDS,
         # Non-OpenAI APIs take text, not the token ids LangChain sends by default.
         check_embedding_ctx_length=settings.openai_base_url is None,
