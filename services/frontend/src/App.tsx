@@ -48,6 +48,7 @@ export default function App() {
     messages: chat.messages,
     // assistant-ui adds its own placeholder reply (a stray branch) when running ends on a user message.
     isRunning: chat.isRunning && chat.messages.at(-1)?.role === "assistant",
+    isLoading: chat.isLoading,
     convertMessage,
     onNew: sendMessage,
     onCancel: chat.cancel,
