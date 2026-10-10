@@ -1,8 +1,11 @@
+import asyncio
+
 import psycopg
 import pytest
 from psycopg.rows import dict_row
 
 from assistant.config import settings
+from assistant.db import SCHEMA_LOCK_ID, migrate_db
 from assistant.migrations import migrate, migration_files
 
 pytestmark = pytest.mark.db
@@ -38,3 +41,11 @@ async def test_repo_migrations_are_applied():
         await migrate(conn)
         cur = await conn.execute("SELECT name FROM schema_migrations ORDER BY name")
         assert [r["name"] for r in await cur.fetchall()] == names
+
+
+async def test_a_second_migration_at_once_fails_instead_of_waiting():
+    with psycopg.connect(settings.postgres_url, autocommit=True) as other:
+        other.execute("SELECT pg_advisory_lock(%s)", (SCHEMA_LOCK_ID,))
+        with pytest.raises(RuntimeError, match="another migration"):
+            await asyncio.wait_for(migrate_db(), 5)
+    await migrate_db()

@@ -27,7 +27,7 @@ from tests.conftest import SlowFake, fake_graph, no_title
 
 from assistant.api import main as api
 from assistant.config import settings
-from assistant.db import Listener, open_db
+from assistant.db import Listener, migrate_db, open_db
 from assistant.runs.events import PgEventLog
 from assistant.usage import Pricing
 from assistant.worker.execution import RunExecutor
@@ -197,6 +197,7 @@ def main() -> None:
         asyncio.run(run_worker())
         return
 
+    asyncio.run(migrate_db())
     procs = [
         subprocess.Popen(
             [

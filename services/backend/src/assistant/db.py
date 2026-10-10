@@ -26,9 +26,27 @@ CONNECTION_KWARGS = {
 SCHEMA_LOCK_ID = 7_431_001
 
 
+async def migrate_db() -> None:
+    """Applies our migrations and the checkpointer's tables. Compose runs it once before the app."""
+    async with await AsyncConnection.connect(
+        settings.postgres_url, **CONNECTION_KWARGS
+    ) as conn:
+        # Fails instead of waiting while another migration runs.
+        cur = await conn.execute(
+            "SELECT pg_try_advisory_lock(%s) AS ok", (SCHEMA_LOCK_ID,)
+        )
+        if not (await cur.fetchone())["ok"]:  # type: ignore[index]
+            raise RuntimeError("another migration is running")
+        try:
+            await migrate(conn)
+            await AsyncPostgresSaver(conn).setup()  # type: ignore[arg-type]
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock(%s)", (SCHEMA_LOCK_ID,))
+
+
 @asynccontextmanager
 async def open_db(max_size: int = 10) -> AsyncIterator[tuple[Pool, AsyncPostgresSaver]]:
-    """Pool and checkpointer, with migrations and checkpointer tables applied."""
+    """Pool and checkpointer on a migrated database (see migrate_db)."""
     pool = Pool(
         conninfo=settings.postgres_url,
         min_size=1,
@@ -39,16 +57,7 @@ async def open_db(max_size: int = 10) -> AsyncIterator[tuple[Pool, AsyncPostgres
         check=Pool.check_connection,
     )
     async with pool:
-        checkpointer = AsyncPostgresSaver(pool)  # type: ignore[arg-type]
-        # api and worker start together; the lock keeps their setup from racing.
-        async with pool.connection() as conn:
-            await conn.execute("SELECT pg_advisory_lock(%s)", (SCHEMA_LOCK_ID,))
-            try:
-                await migrate(conn)
-                await checkpointer.setup()
-            finally:
-                await conn.execute("SELECT pg_advisory_unlock(%s)", (SCHEMA_LOCK_ID,))
-        yield pool, checkpointer
+        yield pool, AsyncPostgresSaver(pool)  # type: ignore[arg-type]
 
 
 async def notify(conn: AsyncConnection, channel: str, payload: str = "") -> None:
