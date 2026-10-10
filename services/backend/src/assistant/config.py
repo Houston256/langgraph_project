@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from dotenv import load_dotenv
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,14 +20,17 @@ class Settings(BaseSettings):
     model_name: str
     summary_model_name: str = "gpt-5-nano"
     embedding_model: str = "text-embedding-3-large"
-    # qdrant
-    qdrant_url_grpc: str
+    # qdrant; compose sets the host to its container
     qdrant_api_key: SecretStr
-    qdrant_host: str
-    qdrant_port: int
-    qdrant_grpc_port: int
-    # postgres
-    postgres_url: str
+    qdrant_host: str = "localhost"
+    qdrant_port: int = 6333
+    qdrant_grpc_port: int = 6334
+    # postgres; compose sets the host to its container
+    postgres_password: SecretStr
+    postgres_user: str = "assistant"
+    postgres_db: str = "assistant"
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
     # runs
     # runs at once per worker; they mostly wait on the model, so this can be high
     worker_concurrency: int = 64
@@ -54,9 +59,19 @@ class Settings(BaseSettings):
     catalog_feed_url: str
     catalog_sync_time: str = "03:33"
     catalog_sync_tz: str = "UTC"
-    # identity: trusted header set by the proxy in front, else one fixed user
-    identity_header: str = "Cf-Access-Authenticated-User-Email"
-    default_user_id: str = "local"
+    # identity: a header set by the proxy in front (e.g. Cf-Access-Authenticated-User-Email),
+    # trusted only when set here; everyone else gets a random visitor cookie
+    identity_header: str | None = None
+    # off only for plain-http dev in browsers that drop Secure cookies on 127.0.0.1
+    visitor_cookie_secure: bool = True
+
+    @property
+    def postgres_url(self) -> str:
+        password = quote(self.postgres_password.get_secret_value(), safe="")
+        return (
+            f"postgresql://{quote(self.postgres_user, safe='')}:{password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
 
 
 settings = Settings()  # type: ignore

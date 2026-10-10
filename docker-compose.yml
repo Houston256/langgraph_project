@@ -1,4 +1,4 @@
-# Shared by backend, worker and sync: same image, env and hardening.
+# Shared by migrate, backend, worker and sync: same image, env and hardening.
 x-app: &app
   build: services/backend/
   init: true
@@ -9,7 +9,7 @@ x-app: &app
     QDRANT_HOST: qdrant
     QDRANT_PORT: "6333"
     QDRANT_GRPC_PORT: "6334"
-    POSTGRES_URL: postgresql://${POSTGRES_USER:-assistant}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-assistant}
+    POSTGRES_HOST: postgres
   tmpfs:
     - /tmp:size=128m
   depends_on:
@@ -17,6 +17,8 @@ x-app: &app
       condition: service_healthy
     postgres:
       condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
   security_opt:
     - no-new-privileges:true
   cap_drop:
@@ -157,6 +159,17 @@ services:
       - app_net
       - db_net
 
+  # Runs the migrations once and exits; the app services start after it succeeded.
+  migrate:
+    <<: *app
+    command: ["python", "-m", "assistant.migrations"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - db_net
+
   backend:
     <<: *app
     container_name: backend
@@ -183,7 +196,8 @@ services:
       - /tmp:size=32m
       - /var/cache/nginx:size=64m
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     cap_drop:

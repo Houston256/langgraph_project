@@ -18,12 +18,9 @@ load_dotenv(find_dotenv())
 for key, value in {
     "OPENAI_API_KEY": "test",
     "MODEL_NAME": "openai/gpt-6-luna",
-    "QDRANT_URL_GRPC": "localhost:6334",
     "QDRANT_API_KEY": "test",
-    "QDRANT_HOST": "localhost",
-    "QDRANT_PORT": "6333",
-    "QDRANT_GRPC_PORT": "6334",
-    "POSTGRES_URL": "postgresql://assistant:assistant@localhost:5432/assistant",
+    "POSTGRES_PASSWORD": "assistant",
+    "IDENTITY_HEADER": "X-Test-User",
 }.items():
     os.environ.setdefault(key, value)
 os.environ["SYSTEM_PROMPT_FILE"] = str(FIXTURES / "prompt.md")
@@ -40,7 +37,7 @@ from langchain_core.outputs import (
 from langgraph.graph import END, START, MessagesState, StateGraph
 
 from assistant.config import settings
-from assistant.db import Listener, open_db
+from assistant.db import Listener, migrate_db, open_db
 from assistant.graphs.registry import GraphSpec
 from assistant.runs import store
 from assistant.runs.events import PgEventLog
@@ -63,6 +60,8 @@ def postgres_reachable() -> bool:
 
 def pytest_collection_modifyitems(config, items):
     if postgres_reachable():
+        # What the compose migrate service does before the app starts.
+        asyncio.run(migrate_db())
         return
     skip = pytest.mark.skip(
         reason="postgres not reachable (docker compose up -d postgres)"
